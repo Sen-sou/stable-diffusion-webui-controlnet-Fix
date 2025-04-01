@@ -52,6 +52,8 @@ from diffusers import (
     StableDiffusionXLPipeline,
     StableDiffusionXLImg2ImgPipeline,
     StableDiffusionXLInpaintPipeline,
+    StableDiffusionControlNetImg2ImgPipeline,
+    StableDiffusionControlNetInpaintPipeline,
     ControlNetModel,
     StableDiffusionLatentUpscalePipeline,
     DDIMScheduler,
@@ -63,6 +65,19 @@ from diffusers import (
     PNDMScheduler,
     AutoencoderKL,
 )
+
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+    NORMAL = '\033[00m'
+  
 
 #ignore future warnings
 import warnings
@@ -108,6 +123,7 @@ class ModelState:
         self.width = 512
         self.batch_size = 1
         self.mode = 0
+        self.original_mode = 0
         self.partition_id = 0
         self.model_hash = ""
         self.control_models = []
@@ -116,8 +132,6 @@ class ModelState:
         self.lora_model = "None"
         self.vae_ckpt = "None"
         self.refiner_ckpt = "None"
-
-
 model_state = ModelState()
 
 DEFAULT_OPENVINO_PYTHON_CONFIG = MappingProxyType(
@@ -599,8 +613,19 @@ def get_diffusers_sd_model(model_config, vae_ckpt, sampler_name, enable_caching,
                     elif os.path.isfile(cn_model_path + '.pth'):
                         cn_model_path = cn_model_path + '.pth'
                     controlnet = ControlNetModel.from_single_file(cn_model_path, local_files_only=True)
-                sd_model = StableDiffusionControlNetPipeline(**sd_model.components, controlnet=controlnet)
+
+                if (model_state.original_mode == 0):
+                    sd_model = StableDiffusionControlNetPipeline(**sd_model.components, controlnet=controlnet)
+                    print(f"{bcolors.OKCYAN}OpenVINO Script: {bcolors.WARNING}RECOMPILING CONTROLNET MODEL TXT2IMG WITH CONTROLNETS: {model_state.control_models}{bcolors.NORMAL}")
+                elif (model_state.original_mode == 1):
+                    sd_model = StableDiffusionControlNetImg2ImgPipeline(**sd_model.components, controlnet=controlnet)
+                    print(f"{bcolors.OKCYAN}OpenVINO Script: {bcolors.WARNING}RECOMPILING CONTROLNET MODEL IMG2IMG WITH CONTROLNETS: {model_state.control_models}{bcolors.NORMAL}")
+                elif (model_state.original_mode == 2):
+                    sd_model = StableDiffusionControlNetInpaintPipeline(**sd_model.components, controlnet=controlnet)
+                    print(f"{bcolors.OKCYAN}OpenVINO Script: {bcolors.WARNING}RECOMPILING CONTROLNET MODEL INPAINT WITH CONTROLNETS: {model_state.control_models}{bcolors.NORMAL}")
+
                 sd_model.controlnet = torch.compile(sd_model.controlnet, backend="openvino_fx")
+                print(f"{bcolors.OKCYAN}OpenVINO Script: {bcolors.WARNING}FINISHED RECOMPILING CONTROLNET{bcolors.NORMAL}")
         else:
             if model_config != "None":
                 local_config_file = os.path.join(curr_dir_path, 'configs', model_config)
@@ -635,8 +660,19 @@ def get_diffusers_sd_model(model_config, vae_ckpt, sampler_name, enable_caching,
                     elif os.path.isfile(cn_model_path + '.pth'):
                         cn_model_path = cn_model_path + '.pth'
                     controlnet = ControlNetModel.from_single_file(cn_model_path, local_files_only=True)
-                sd_model = StableDiffusionControlNetPipeline(**sd_model.components, controlnet=controlnet)
+
+                if (model_state.original_mode == 0):
+                    sd_model = StableDiffusionControlNetPipeline(**sd_model.components, controlnet=controlnet)
+                    print(f"{bcolors.OKCYAN}OpenVINO Script: {bcolors.WARNING}RECOMPILING CONTROLNET MODEL TXT2IMG WITH CONTROLNETS: {model_state.control_models}{bcolors.NORMAL}")
+                elif (model_state.original_mode == 1):
+                    sd_model = StableDiffusionControlNetImg2ImgPipeline(**sd_model.components, controlnet=controlnet)
+                    print(f"{bcolors.OKCYAN}OpenVINO Script: {bcolors.WARNING}RECOMPILING CONTROLNET MODEL IMG2IMG WITH CONTROLNETS: {model_state.control_models}{bcolors.NORMAL}")
+                elif (model_state.original_mode == 2):
+                    sd_model = StableDiffusionControlNetInpaintPipeline(**sd_model.components, controlnet=controlnet)
+                    print(f"{bcolors.OKCYAN}OpenVINO Script: {bcolors.WARNING}RECOMPILING CONTROLNET MODEL INPAINT WITH CONTROLNETS: {model_state.control_models}{bcolors.NORMAL}")
+
                 sd_model.controlnet = torch.compile(sd_model.controlnet, backend="openvino_fx")
+                print(f"{bcolors.OKCYAN}OpenVINO Script: {bcolors.WARNING}FINISHED COMPILING CONTROLNET{bcolors.NORMAL}")
 
         #load lora
 
@@ -788,7 +824,7 @@ def init_new(self, all_prompts, all_seeds, all_subseeds):
     else:
         raise RuntimeError(f"bad number of images passed: {len(imgs)}; expecting {self.batch_size} or less")
 
-def process_images_openvino(p: StableDiffusionProcessing, model_config, vae_ckpt, sampler_name, enable_caching, override_hires, upscaler, hires_steps, d_strength, openvino_device, mode, is_xl_ckpt, refiner_ckpt, refiner_frac) -> Processed:
+def process_images_openvino(p: StableDiffusionProcessing, model_config, vae_ckpt, sampler_name, enable_caching, override_hires, upscaler, hires_steps, d_strength, openvino_device, mode, original_mode, is_xl_ckpt, refiner_ckpt, refiner_frac) -> Processed:
     """this is the main loop that both txt2img and img2img use; it calls func_init once inside all the scopes and func_sample once per batch"""
 
     """this is the main loop that both txt2img and img2img use; it calls func_init once inside all the scopes and func_sample once per batch"""
@@ -826,18 +862,21 @@ def process_images_openvino(p: StableDiffusionProcessing, model_config, vae_ckpt
 
     if p.scripts is not None:
         p.scripts.process(p)
+
     cn_model="None"
     control_models = []
     control_images = []
-    print(p.extra_generation_params)
+    # print(p.extra_generation_params)
+    print(f"{bcolors.OKCYAN}OpenVINO Script: {bcolors.NORMAL}Extra Parameters: {bcolors.OKGREEN}{p.extra_generation_params}{bcolors.NORMAL}")
     for key in p.extra_generation_params.keys():
         if key.startswith('ControlNet'):
             control_images_cn = []
             cn_params = p.extra_generation_params[key]
             cn_param_elements = [part.strip() for part in cn_params.split(', ')]
             for element in cn_param_elements:
-                if (element.split(':')[0] == "model"):
+                if (element.split(':')[0] == "Model"):
                     cn_model = (element.split(':')[1]).split(' ')[1]
+                    break
 
             if (cn_model != "None"):
                 control_models.append(cn_model)
@@ -851,7 +890,7 @@ def process_images_openvino(p: StableDiffusionProcessing, model_config, vae_ckpt
                     control_images.append(cn_image)
 
     model_state.control_models = control_models
-
+    print(f"{bcolors.OKCYAN}OpenVINO Script: {bcolors.NORMAL}Detected Control Models: {bcolors.OKGREEN}{control_models}{bcolors.NORMAL}")
 
     infotexts = []
     output_images = []
@@ -900,7 +939,8 @@ def process_images_openvino(p: StableDiffusionProcessing, model_config, vae_ckpt
                     custom_inputs.update(cross_attention_kwargs={"scale" : lora_model.te_multiplier})
 
             if (model_state.height != p.height or model_state.width != p.width or model_state.batch_size != p.batch_size or model_state.lora_model != lora_model_name
-                   or model_state.mode != mode or model_state.model_hash != shared.sd_model.sd_model_hash or model_state.cn_model != cn_model):
+                   or model_state.mode != mode or model_state.original_mode != original_mode or model_state.model_hash != shared.sd_model.sd_model_hash or model_state.cn_model != cn_model):
+                print(f"{bcolors.OKCYAN}OpenVINO Script: {bcolors.WARNING}NEED MODEL RECOMPILE, DEVICE: {model_state.device}{bcolors.NORMAL}")
                 model_state.recompile = 1
                 model_state.height = p.height
                 model_state.width = p.width
@@ -910,6 +950,7 @@ def process_images_openvino(p: StableDiffusionProcessing, model_config, vae_ckpt
                 model_state.model_hash = shared.sd_model.sd_model_hash
                 model_state.lora_model = lora_model_name
                 model_state.vae_ckpt = vae_ckpt
+                model_state.original_mode = original_mode
 
             shared.sd_diffusers_model = get_diffusers_sd_model(model_config, vae_ckpt, sampler_name, enable_caching, openvino_device, mode, is_xl_ckpt, refiner_ckpt, refiner_frac)
             shared.sd_diffusers_model.scheduler = set_scheduler(shared.sd_diffusers_model, sampler_name)
@@ -959,11 +1000,116 @@ def process_images_openvino(p: StableDiffusionProcessing, model_config, vae_ckpt
                     'mask_image': p.mask,
                 })
             elif (mode == 3):
-                 custom_inputs.update({
-                    'image': control_images,
+
+                if (model_state.original_mode == 1):
+                    custom_inputs.update({
+                    'image': p.init_images,
+                    'strength':p.denoising_strength,
+                    })
+                
+                elif (model_state.original_mode == 2):
+                    custom_inputs.update({
+                    'image': p.init_images,
+                    'strength':p.denoising_strength,
+                    'mask_image': p.mask,
+                    })
+
+                control_weights = []
+                guidance_starts = []
+                guidance_ends = []
+                
+                final_guess_mode = False
+                is_first_controlnet = True
+                
+                controlnet_keys = sorted([k for k in p.extra_generation_params if k.startswith('ControlNet ')])
+                
+                print(f"{bcolors.OKCYAN}OpenVINO Script: {bcolors.NORMAL}Found ControlNet keys: {bcolors.OKGREEN}{controlnet_keys}{bcolors.NORMAL}")
+                
+                if not controlnet_keys:
+                    print(f"{bcolors.OKCYAN}OpenVINO Script: {bcolors.WARNING}mode is 3, but no 'ControlNet #' keys found in extra_generation_params!{bcolors.NORMAL}")
+                    
+                for key in controlnet_keys:
+                    params_str = p.extra_generation_params.get(key, "")
+                    print(f"{bcolors.OKCYAN}OpenVINO Script: {bcolors.NORMAL}Parsing params for {bcolors.OKGREEN}{key}: {params_str}{bcolors.NORMAL}")
+                    
+                    current_weight = 1.0
+                    current_guidance_start = 0.0
+                    current_guidance_end = 1.0
+                    current_control_mode_str = "Balanced"
+                    
+                    try:
+                        param_parts = params_str.split(',')
+                        params_dict = {}
+                        for part in param_parts:
+                            kv = part.split(':', 1)
+                            if len(kv) == 2:
+                                param_key = kv[0].strip()
+                                param_value = kv[1].strip()
+                                params_dict[param_key] = param_value
+                                
+                        if 'Weight' in params_dict:
+                            current_weight = float(params_dict['Weight'])
+                        if 'Guidance Start' in params_dict:
+                            current_guidance_start = float(params_dict['Guidance Start'])
+                        if 'Guidance End' in params_dict:
+                            current_guidance_end = float(params_dict['Guidance End'])
+                        if 'Control Mode' in params_dict:
+                            current_control_mode_str = params_dict['Control Mode']
+
+                    except ValueError as e:
+                        print(f"{bcolors.OKCYAN}OpenVINO Script: {bcolors.WARNING}Could not parse float value in {key}. Using defaults. Error: {e}{bcolors.NORMAL}")
+                    except Exception as e:
+                        print(f"{bcolors.OKCYAN}OpenVINO Script: {bcolors.WARNING}Error parsing parameters for {key}. Using defaults. Error: {e}{bcolors.NORMAL}")
+                        
+                    current_unit_guess_mode = False
+                    if current_control_mode_str == "ControlNet is more important":
+                        current_unit_guess_mode = True
+
+                    if is_first_controlnet:
+                        final_guess_mode = current_unit_guess_mode
+                        print(f"{bcolors.OKCYAN}OpenVINO Script: {bcolors.NORMAL}Setting global guess_mode based on {bcolors.OKGREEN}{key}: {final_guess_mode}{bcolors.NORMAL} (from Control Mode: '{current_control_mode_str}'){bcolors.NORMAL}")
+                        if current_control_mode_str == "My prompt is more important":
+                            print(f"{bcolors.OKCYAN}OpenVINO Script: {bcolors.WARNING}'My prompt is more important' mode approximated as guess_mode=False.{bcolors.NORMAL}")
+                        is_first_controlnet = False
+                    elif current_unit_guess_mode != final_guess_mode :
+                        print(f"{bcolors.OKCYAN}OpenVINO Script: {bcolors.WARNING}Control Mode '{current_control_mode_str}' for {key} implies guess_mode={current_unit_guess_mode}, but global guess_mode={final_guess_mode} (set by first unit) will be used.{bcolors.NORMAL}")
+                    
+                    control_weights.append(current_weight)
+                    guidance_starts.append(current_guidance_start)
+                    guidance_ends.append(current_guidance_end)
+                    
+                print(f"{bcolors.OKCYAN}OpenVINO Script: {bcolors.NORMAL}Extracted Weights: {bcolors.OKGREEN}{control_weights}{bcolors.NORMAL}")
+                print(f"{bcolors.OKCYAN}OpenVINO Script: {bcolors.NORMAL}Extracted Guidance Starts: {bcolors.OKGREEN}{guidance_starts}{bcolors.NORMAL}")
+                print(f"{bcolors.OKCYAN}OpenVINO Script: {bcolors.NORMAL}Extracted Guidance Ends: {bcolors.OKGREEN}{guidance_ends}{bcolors.NORMAL}")
+                print(f"{bcolors.OKCYAN}OpenVINO Script: {bcolors.NORMAL}Final guess_mode passed to pipeline: {bcolors.OKGREEN}{final_guess_mode}{bcolors.NORMAL}")
+                
+                controlImage = ''
+                if (model_state.original_mode == 0):
+                    controlImage = 'image'
+                else:
+                    controlImage = 'control_image'
+                    
+                    
+                if len(controlnet_keys) > 1:
+                    custom_inputs.update({
+                    controlImage: control_images,
                     'width': p.width,
                     'height': p.height,
+                    'controlnet_conditioning_scale': control_weights,
+                    'control_guidance_start': guidance_starts,
+                    'control_guidance_end': guidance_ends,
+                    'guess_mode': final_guess_mode,
                 })
+                else:
+                    custom_inputs.update({
+                    controlImage: control_images,
+                    'width': p.width,
+                    'height': p.height,
+                    'controlnet_conditioning_scale': current_weight,
+                    'control_guidance_start': current_guidance_start,
+                    'control_guidance_end': current_guidance_end,
+                    'guess_mode': final_guess_mode,
+                    })
 
             if refiner_ckpt != "None" and is_xl_ckpt is True:
                 base_output_type = "latent"
@@ -1271,14 +1417,18 @@ class Script(scripts.Script):
 
         # mode can be 0, 1, 2 corresponding to txt2img, img2img, inpaint respectively
         mode = 0
+        original_mode = 0
         if self.is_txt2img:
             mode = 0
-            processed = process_images_openvino(p, model_config, vae_ckpt, p.sampler_name, enable_caching, override_hires, upscaler, hires_steps, d_strength, openvino_device, mode, is_xl_ckpt, refiner_ckpt, refiner_frac)
+            original_mode = 0
+            processed = process_images_openvino(p, model_config, vae_ckpt, p.sampler_name, enable_caching, override_hires, upscaler, hires_steps, d_strength, openvino_device, mode, original_mode, is_xl_ckpt, refiner_ckpt, refiner_frac)
         else:
             if p.image_mask is None:
                 mode = 1
+                original_mode = 1
             else:
                 mode = 2
+                original_mode = 2
             p.init = functools.partial(init_new, p)
-            processed = process_images_openvino(p, model_config, vae_ckpt, p.sampler_name, enable_caching, override_hires, upscaler, hires_steps, d_strength, openvino_device, mode, is_xl_ckpt, refiner_ckpt, refiner_frac)
+            processed = process_images_openvino(p, model_config, vae_ckpt, p.sampler_name, enable_caching, override_hires, upscaler, hires_steps, d_strength, openvino_device, mode, original_mode, is_xl_ckpt, refiner_ckpt, refiner_frac)
         return processed
